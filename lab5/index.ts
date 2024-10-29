@@ -1,44 +1,60 @@
 import "dotenv/config";
-import { Connection } from "@solana/web3.js";
-import { getKeypairFromEnvironment } from "@solana-developers/helpers";
+
+import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
 import {
-    keypairIdentity,
-    Metaplex,
-    irysStorage,
-} from "@metaplex-foundation/js";
-import { uploadMetadata } from "./uploadMetadata";
-import { createNft } from "./createNft";
+    createSignerFromKeypair,
+    signerIdentity,
+} from "@metaplex-foundation/umi";
+import { mplTokenMetadata } from "@metaplex-foundation/mpl-token-metadata";
 
-console.log({ message: "Connection done" });
+import { irysUploader } from "@metaplex-foundation/umi-uploader-irys";
 
-const nftData = {
-    name: "SDP Coole Nft",
-    symbol: "SDP",
-    description: "This is a cool NFT from Solana Developers Program - Romania RO",
-    imagePath: "./lab5/solana.jpg",
+import { getKeypairFromEnvironment } from "@solana-developers/helpers";
+import { clusterApiUrl, Connection } from "@solana/web3.js";
+
+import { uploadNftImage } from "./nft_image";
+import { uploadNftMetadata } from "./nft_metadata";
+import { mintNft } from "./nft_mint";
+import { transferNft } from "./nft_transfer";
+
+const user = getKeypairFromEnvironment("SECRET_KEY");
+
+const connection = new Connection(clusterApiUrl("devnet"));
+const umi = createUmi(connection);
+
+let keypair = umi.eddsa.createKeypairFromSecretKey(user.secretKey);
+const myKeypairSigner = createSignerFromKeypair(umi, keypair);
+
+umi.use(signerIdentity(myKeypairSigner));
+umi.use(mplTokenMetadata());
+umi.use(irysUploader());
+
+const NFT_DATA = {
+    name: "Telegram NFT",
+    symbol: "TG",
+    description: "Telegram nft description",
+    imgFilePath: "telegram.png",
 };
 
-async function main(): Promise<void> {
-    const connection = new Connection("https://api.devnet.solana.com");
+console.log("Loaded user:", user.publicKey.toBase58());
 
-    const keypair = getKeypairFromEnvironment("SECRET_KEY");
-    console.log(`✅ Keypair loaded: ${keypair.publicKey.toBase58()}`);
+// main
+(async () => {
+    try {
+        // 1. Upload image
+        const imgUri = await uploadNftImage(umi, NFT_DATA.imgFilePath);
 
-    const metaplex = Metaplex.make(connection)
-        .use(keypairIdentity(keypair))
-        .use(
-            irysStorage({
-                address: "https://devnet.bundlr.network",
-                providerUrl: "https://devnet.solana.com",
-                timeout: 60000,
-            })
-        );
+        // 2. Upload metadata
+        const metadataUri = await uploadNftMetadata(umi, NFT_DATA, imgUri!);
 
-    console.log("✅ Metaplex loaded");
-    const uri = await uploadMetadata(metaplex, nftData);
-    const nft = await createNft(metaplex, uri, nftData);
+        // 3. Mint NFT
+        await mintNft(umi, metadataUri!, NFT_DATA);
 
-    console.log("🎉 Hooray!");
-}
+        // 4. TODO: update metadata
 
-main().then(() => console.log("Process finished"));
+        // 5. TODO: transfer
+        // await transferNft(umi, myKeypairSigner, mintedNftAddress, RECIPIENT_PUBLIC_KEY);
+    } catch (error) {
+        console.log(`Oops.. Something went wrong ${error}`);
+    }
+})();
