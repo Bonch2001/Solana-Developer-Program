@@ -1,3 +1,0 @@
-[submodule "lab6/rustlings"]
-	path = lab6/rustlings
-	url = https://github.com/rust-lang/rustlings.git
